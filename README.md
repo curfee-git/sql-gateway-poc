@@ -330,8 +330,8 @@ the gateway refuses to boot if required variables are missing.
 
 | Variable                           | Required | Default | Description                                                                                                               |
 | :--------------------------------- | :------: | :------ | :------------------------------------------------------------------------------------------------------------------------ |
-| `DATABASE_ADAPTER`                 |   yes    | —       | Name of the adapter package under `src/infrastructure/persistence/`. Ships with `postgres`.                               |
-| `DATABASE_URL`                     |   yes    | —       | Connection string understood by the selected adapter.                                                                     |
+| `DATABASE_ADAPTER`                 |   yes    | n/a     | Name of the adapter package under `src/infrastructure/persistence/`. Ships with `postgres`.                               |
+| `DATABASE_URL`                     |   yes    | n/a     | Connection string understood by the selected adapter.                                                                     |
 | `QUERY_TIMEOUT_MS`                 |    no    | `5000`  | Upper bound on how long one query may run.                                                                                |
 | `MAX_RESULTS`                      |    no    | `1000`  | Upper bound on records returned by one read.                                                                              |
 | `MAX_SAMPLE_ROWS_IN_OBSERVABILITY` |    no    | `20`    | Rows kept per allowed-query entry in the in-memory buffer. Column names are always kept. The HTTP response is unaffected. |
@@ -367,7 +367,7 @@ sql_gateway_poc/
 │  │  └─ model/
 │  │     ├─ access_guard.py            The triple that mediates agent <-> store.
 │  │     ├─ decision_enum.py           DecisionEnum: ALLOWED / REJECTED / DB_ERROR.
-│  │     └─ query_payload.py           str | dict | list — adapter decides.
+│  │     └─ query_payload.py           str | dict | list. Adapter decides.
 │  │
 │  ├─ application/
 │  │  ├─ use_cases/
@@ -458,18 +458,18 @@ one concrete class per outbound port: `QueryExecutor`, `QueryValidator`,
 ### MySQL (SQL-family, reuses base classes)
 
 1. Create `src/infrastructure/persistence/mysql/` with:
-   - `query_executor_adapter.py` — `MysqlQueryExecutorAdapter` targeting `QueryExecutor`.
-   - `query_validator_adapter.py` — `MysqlQueryValidatorAdapter(SqlQueryValidator)` with `_dialect = "mysql"`.
-   - `query_scrubber_adapter.py` — `MysqlQueryScrubberAdapter(SqlQueryScrubberAdapter)`. Sqlglot handles the dialect.
-   - `rules/` — MySQL-specific rules, each decorated with `@sql_rule(dialects=["mysql"])`.
+   - `query_executor_adapter.py`: `MysqlQueryExecutorAdapter` targeting `QueryExecutor`.
+   - `query_validator_adapter.py`: `MysqlQueryValidatorAdapter(SqlQueryValidator)` with `_dialect = "mysql"`.
+   - `query_scrubber_adapter.py`: `MysqlQueryScrubberAdapter(SqlQueryScrubberAdapter)`. Sqlglot handles the dialect.
+   - `rules/`: MySQL-specific rules, each decorated with `@sql_rule(dialects=["mysql"])`.
 2. Set `DATABASE_ADAPTER=mysql DATABASE_URL=mysql://...` at boot.
 
 ### Mongo (NoSQL, standalone)
 
 1. Create `src/infrastructure/persistence/mongo/` with:
-   - `query_executor_adapter.py` — `MongoQueryExecutorAdapter` using `pymongo`. Parses the `query_text` JSON (`{"op": "find", "collection": "users", "filter": {...}}`).
-   - `query_validator_adapter.py` — written from scratch (no SQL base). Rejects `$where`, `$eval`, `deleteMany` without a filter, etc.
-   - `query_scrubber_adapter.py` — walks the JSON doc and masks values on sensitive keys.
+   - `query_executor_adapter.py`: `MongoQueryExecutorAdapter` using `pymongo`. Parses the `query_text` JSON (`{"op": "find", "collection": "users", "filter": {...}}`).
+   - `query_validator_adapter.py`: written from scratch (no SQL base). Rejects `$where`, `$eval`, `deleteMany` without a filter, etc.
+   - `query_scrubber_adapter.py`: walks the JSON doc and masks values on sensitive keys.
 2. Set `DATABASE_ADAPTER=mongo DATABASE_URL=mongodb://...` at boot.
 
 No shared plumbing is pulled in for Mongo; the walker only touches
@@ -549,16 +549,20 @@ This is a proof of concept. For production, add:
 
 ### Why not a wire-protocol proxy?
 
-For the productionization, a wire-protocol proxy (pgcat-shaped) is the
-better base: transparent transactions, prepared statements, native tooling
-(`psql`, pgAdmin, any ORM), connection pooling, row streaming, and type
-fidelity without JSON transcoding. This repo goes REST on purpose — the
-thesis is "rules live in the system, not in the prompt", and making that
-legible with `curl`, docker-compose, and a live HTML page matters more
-here than wire fidelity. The design generalizes: `SqlValidationRule` and
-the `agent_rw` role are the real contribution; the HTTP surface is just
-the enforcement point. Swap it for a wire proxy and the same rules and
-role still apply — different axis, same principle.
+For a production version, a wire-protocol proxy in the shape of pgcat is a
+better base. You get transparent transactions, prepared statements, real
+tooling support (psql, pgAdmin, any ORM), connection pooling, row
+streaming, and type fidelity without any JSON transcoding in the middle.
+
+This repo goes REST on purpose. The point it wants to make is that rules
+belong in the system instead of the prompt, and that is easier to show
+with curl, docker-compose, and a live HTML page than with a proxy a
+reader has to install and point libpq at.
+
+The design does not depend on the surface. The real parts are the
+validation rule registry and the database role. Put a pgcat-shaped proxy
+in front of the same rules and the same role, and the enforcement still
+holds. Same idea, different entry point.
 
 ---
 
