@@ -108,7 +108,9 @@ class InMemoryObservabilityRecorderAdapter:
     """Last ``_MAX_BUFFERED_ENTRIES`` entries plus fan-out to live subscribers."""
 
     def __init__(self) -> None:
-        self._entries: deque[ObservabilityEntryDto] = deque(maxlen=_MAX_BUFFERED_ENTRIES)
+        self._entries: deque[ObservabilityEntryDto] = deque(
+            maxlen=_MAX_BUFFERED_ENTRIES
+        )
         self._subscribers: set[_Subscriber] = set()
         self._lock = threading.Lock()
 

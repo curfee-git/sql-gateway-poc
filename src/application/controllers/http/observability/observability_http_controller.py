@@ -66,9 +66,7 @@ class ObservabilityHttpController:
     def _render_observability_page(self) -> HTMLResponse:
         return HTMLResponse(_OBSERVABILITY_HTML_PAGE)
 
-    async def _stream_observability_events(
-        self, request: Request
-    ) -> StreamingResponse:
+    async def _stream_observability_events(self, request: Request) -> StreamingResponse:
         recorder = self._in_memory_recorder
 
         async def event_generator() -> AsyncIterator[bytes]:

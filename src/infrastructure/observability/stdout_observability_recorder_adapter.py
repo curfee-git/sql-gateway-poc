@@ -56,5 +56,7 @@ class StdoutObservabilityRecorderAdapter:
 
 
 @injectable
-def create_stdout_observability_recorder_adapter() -> StdoutObservabilityRecorderAdapter:
+def create_stdout_observability_recorder_adapter() -> (
+    StdoutObservabilityRecorderAdapter
+):
     return StdoutObservabilityRecorderAdapter()

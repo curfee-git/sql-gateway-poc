@@ -65,7 +65,7 @@ class TestLogRedactorAdapter:
         assert "[REDACTED" in output
 
     def test_update_mixed_columns_redacts_only_sensitive_one(self):
-        sql = "UPDATE users SET password_hash = 'x', name = 'Carol' " "WHERE id = 3"
+        sql = "UPDATE users SET password_hash = 'x', name = 'Carol' WHERE id = 3"
         output = self.scrubber.scrub(sql)
         assert "'x'" not in output
         assert "Carol" not in output

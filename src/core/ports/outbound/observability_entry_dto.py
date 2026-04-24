@@ -61,7 +61,9 @@ class ObservabilityEntryDto:
     timestamp: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     def to_json_payload(self, *, include_result_data: bool = True) -> dict[str, object]:
-        payload = {key: value for key, value in asdict(self).items() if value is not None}
+        payload = {
+            key: value for key, value in asdict(self).items() if value is not None
+        }
         if not include_result_data:
             payload.pop("rows", None)
             payload.pop("columns", None)

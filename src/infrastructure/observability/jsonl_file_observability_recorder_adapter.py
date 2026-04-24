@@ -55,7 +55,10 @@ class JsonlFileObservabilityRecorderAdapter:
         if self._file_path is None:
             return
         json_line = json.dumps(entry.to_json_payload(include_result_data=False)) + "\n"
-        with self._write_lock, self._file_path.open("a", encoding="utf-8") as output_file:
+        with (
+            self._write_lock,
+            self._file_path.open("a", encoding="utf-8") as output_file,
+        ):
             output_file.write(json_line)
 
 

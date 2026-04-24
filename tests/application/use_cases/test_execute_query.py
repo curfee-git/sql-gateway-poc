@@ -82,7 +82,9 @@ def _build_use_case(
     observability_recorder = RecordingObservabilityRecorder()
     validator = FakeQueryValidator(validation_result)
     executor = FakeQueryExecutor(query_outcome)
-    guard = AccessGuard(validator=validator, scrubber=FakeQueryScrubber(), executor=executor)
+    guard = AccessGuard(
+        validator=validator, scrubber=FakeQueryScrubber(), executor=executor
+    )
     settings = GatewaySettings(
         database_adapter="postgres",
         database_url="postgresql://localhost/test",
