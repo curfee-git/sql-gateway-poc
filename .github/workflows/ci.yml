@@ -1,0 +1,42 @@
+# MIT License
+#
+# Copyright (c) 2026 Philipp Höllinger
+# See LICENSE for the full text.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-typecheck-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Ruff (lint)
+        run: ruff check .
+
+      - name: Ruff (format)
+        run: ruff format --check .
+
+      - name: Mypy
+        run: mypy .
+
+      - name: Pytest (unit)
+        run: pytest
+
+      - name: Pytest (integration)
+        run: pytest -m integration

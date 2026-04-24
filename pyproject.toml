@@ -1,0 +1,91 @@
+# MIT License
+#
+# Copyright (c) 2026 Philipp Höllinger
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+# THE SOFTWARE.
+
+[project]
+name = "sql-gateway"
+version = "0.1.0"
+description = "A structural layer that enforces 'no destructive SQL' between an AI agent and a database."
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi==0.136.1",
+    "uvicorn[standard]==0.46.0",
+    "psycopg[binary]==3.3.3",
+    "sqlglot==30.6.0",
+    "pydantic==2.13.3",
+    "pydantic-settings==2.14.0",
+    "wireup==2.9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.0.3",
+    "anyio==4.13.0",
+    "httpx==0.28.1",
+    "testcontainers[postgres]==4.14.2",
+    "ruff==0.15.11",
+    "mypy==1.20.2",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-ra --strict-markers --import-mode=importlib -p no:cacheprovider -m 'not integration'"
+markers = [
+    "integration: hits a real Postgres via testcontainers (requires Docker)",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "W",    # pycodestyle warnings
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # bugbear
+    "SIM",  # flake8-simplify
+    "C4",   # flake8-comprehensions
+]
+ignore = [
+    "E501", # line too long: handled by the formatter
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+ignore_missing_imports = true
+exclude = ["^\\.venv/", "^tests/"]
+plugins = ["pydantic.mypy"]
+namespace_packages = true
+explicit_package_bases = true
+mypy_path = "src"

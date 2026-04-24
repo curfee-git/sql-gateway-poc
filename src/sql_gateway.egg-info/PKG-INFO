@@ -1,0 +1,18 @@
+Metadata-Version: 2.4
+Name: sql-gateway
+Version: 0.1.0
+Summary: A structural layer that enforces 'no destructive SQL' between an AI agent and a database.
+Requires-Python: >=3.11
+Requires-Dist: fastapi==0.136.1
+Requires-Dist: uvicorn[standard]==0.46.0
+Requires-Dist: psycopg[binary]==3.3.3
+Requires-Dist: sqlglot==30.6.0
+Requires-Dist: pydantic==2.13.3
+Requires-Dist: pydantic-settings==2.14.0
+Requires-Dist: wireup==2.9.0
+Provides-Extra: dev
+Requires-Dist: pytest==9.0.3; extra == "dev"
+Requires-Dist: httpx==0.28.1; extra == "dev"
+Requires-Dist: testcontainers[postgres]==4.14.2; extra == "dev"
+Requires-Dist: ruff==0.15.11; extra == "dev"
+Requires-Dist: mypy==1.20.2; extra == "dev"
