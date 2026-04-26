@@ -4,7 +4,7 @@
 
 ### _Decision Enforcement for AI Agents_
 
-**A rule is only real when the system cannot violate it.**
+**If a rule is only in a prompt, the agent will eventually break it.**
 
 <br/>
 
@@ -20,7 +20,7 @@
 ![Architecture](https://img.shields.io/badge/architecture-hexagonal-6F42C1)
 ![Status](https://img.shields.io/badge/status-proof%20of%20concept-orange)
 
-<sub>A proof of concept that shows what _decision enforcement_ looks like when rules live in the system instead of the prompt. Hexagonal layout, annotation-based DI (`@injectable`), dynamic adapter loading: swap Postgres for another database by setting one environment variable.</sub>
+<sub>A small proof of concept that puts agent guardrails into the runtime instead of the prompt. Hexagonal layout, annotation-based DI (`@injectable`), dynamic adapter loading. To swap Postgres for another database, change one environment variable.</sub>
 
 </div>
 
@@ -48,48 +48,26 @@
 
 ## What this is
 
-An HTTP gateway that sits between an AI agent and a Postgres database. The
-agent sends SQL to `POST /query`; the gateway decides whether to forward it
-to the database, forwards it if allowed, and records one observability entry
-per request.
+An HTTP gateway that runs between an AI agent and a Postgres database. The agent posts SQL to `POST /query`. The gateway parses it, decides whether it is allowed, forwards it to the database if it is, and writes one observability entry for every request.
 
-"Allowed" is defined by two overlapping checks, each strong where the other
-is weak. A rule stated once in one layer can slip through. A rule expressed
-in both the parser and the database role cannot.
+What counts as "allowed" is checked in two different places, and each one catches cases the other misses. If you put a rule into only one of them, there is a gap. Putting it into both the parser and the database role closes that gap.
 
 > [!NOTE]
-> This repo is a companion artifact to a LinkedIn post on decision
-> enforcement. The code is short on purpose; the design is the part worth
-> reading.
+> This repo is a companion to a LinkedIn post on decision enforcement. The code is small on purpose. The design is what the post is about.
 
 ---
 
 ## Why two layers
 
-Rules like _"the agent must not run destructive queries"_ are only real
-when the system cannot execute them. Prompts can be bypassed; code reviews
-miss edge cases; individual discipline does not scale. The gateway puts the
-rule in two places at once:
+Take a rule like _"the agent must not run destructive queries"_. The rule only does anything if the system itself cannot run them. Prompts can be ignored, code reviews miss things, and personal discipline does not scale across hundreds of agent runs. So the gateway puts the same rule into two places at once:
 
-- **Layer 1, the SQL parser** (`sqlglot` + six AST rules, inside the
-  gateway). Fast, informative, returns HTTP 400 with a machine-readable
-  rejection code. Good at structural checks: multi-statement smuggling,
-  data-modifying CTEs, blocked server-side functions.
-- **Layer 2, the database role** (`agent_rw`, defined in
-  [`src/infrastructure/persistence/postgres/init.sql`](src/infrastructure/persistence/postgres/init.sql)).
-  Authoritative. Good at things a parser cannot reliably see: which
-  columns hold secrets, which functions are revoked, what `SELECT *`
-  actually touches.
+- **Layer 1: the SQL parser** (`sqlglot` plus six AST rules, running inside the gateway). It returns HTTP 400 with a rejection code that callers can react to. This layer handles structural checks like multi-statement smuggling, data-modifying CTEs, and blocked server-side functions.
+- **Layer 2: the database role** (`agent_rw`, defined in [`src/infrastructure/persistence/postgres/init.sql`](src/infrastructure/persistence/postgres/init.sql)). This is the one that has the final say. It catches what the parser cannot reliably see: which columns contain secrets, which functions have been revoked, what `SELECT *` actually returns at runtime.
 
-The two layers are not redundant. They overlap where they can (both block
-DDL) and cover each other where they must (Layer 2 catches sensitive-column
-reads that Layer 1 cannot identify; Layer 1 catches structural smuggling
-and function calls that Layer 2 would let through). That pairing is the
-point of the repo.
+Both layers block DDL. Beyond that, Layer 2 stops sensitive-column reads that Layer 1 has no way of identifying, and Layer 1 catches structural smuggling and blocked function calls that Layer 2 would otherwise allow.
 
 > [!IMPORTANT]
-> The parser and the permissions are the same decision written in two
-> languages. The duplication is the feature, not the waste.
+> The parser rules and the database permissions describe the same decision in two languages. The overlap is on purpose.
 
 ---
 
@@ -129,10 +107,7 @@ point of the repo.
    └──────────────────────────────────────────────────────────────┘
 ```
 
-Both layers are adapter-specific. The repo ships one concrete adapter
-(Postgres) but the architecture is a plugin registry. Swap is one
-environment variable plus one adapter package; zero edits to gateway code.
-See [Adding a database adapter](#adding-a-database-adapter).
+Both layers are adapter-specific. The repo comes with one adapter (Postgres), but the architecture treats adapters as a registry. Swapping is one environment variable plus one adapter package, with no edits to gateway code. See [Adding a database adapter](#adding-a-database-adapter).
 
 ---
 
@@ -145,9 +120,7 @@ make compose-up          # build and start postgres + gateway
 ./demo.sh                # in a second terminal, run the demo scenarios
 ```
 
-Open `http://localhost:8080/observability` to watch requests appear in real
-time. Watch the gateway container logs to see one JSON observability line
-per request.
+Open `http://localhost:8080/observability` to watch requests as they happen. The gateway container logs print one JSON observability line per request.
 
 ### Without Docker
 
@@ -178,23 +151,17 @@ make run                 # starts uvicorn with reload on http://localhost:8080
 | `rejected` |    400 | `request_id`, `reason` (rejection code), `message`, optional `detail` |
 | `db_error` |    502 | `request_id`, `reason` (sanitized message), `error_code` (SQLSTATE)   |
 
-The docker-compose healthcheck targets `/readiness`, so the service is only
-reported healthy when it can actually serve queries.
+The docker-compose healthcheck targets `/readiness`, so the service is only reported as healthy once it can actually serve queries.
 
 ---
 
 ## Live observability
 
-Open `http://localhost:8080/observability` once the gateway is up. Every
-`/query` request appears as a card. Title and description are derived from
-the query text and the gateway's decision. The page is populated by the
-gateway itself via Server-Sent Events; nothing is hardcoded.
+Open `http://localhost:8080/observability` once the gateway is running. Each `/query` request appears as a card on the page. The title and description come from the query text and the gateway's decision. The page receives data from the gateway via Server-Sent Events. Nothing is hardcoded.
 
 ### Three sinks, two payloads
 
-Every request is recorded by a `MultiSinkObservabilityRecorderAdapter`,
-which fans each entry out to three downstream recorders. A failure in one
-sink is logged and the remaining sinks still receive the entry.
+Every request gets recorded by `MultiSinkObservabilityRecorderAdapter`, which sends the entry to three downstream recorders. If one sink fails, the failure is logged and the other two still receive the entry.
 
 | Recorder                                | Payload            | Purpose                                                                      |
 | :-------------------------------------- | :----------------- | :--------------------------------------------------------------------------- |
@@ -202,36 +169,22 @@ sink is logged and the remaining sinks still receive the entry.
 | `JsonlFileObservabilityRecorderAdapter` | PII-free JSON line | Optional append-only file. Active only if `OBSERVABILITY_JSONL_PATH` is set. |
 | `InMemoryObservabilityRecorderAdapter`  | Full payload       | Backs the `/observability` page. Ring buffer, last 500 entries.              |
 
-The split is deliberate. Stdout and the JSONL file carry the same PII-free
-view: decision, redacted query, rejection code, SQLSTATE, timings, and
-counts. The in-memory buffer keeps the full payload (including `rows` and
-`columns`) so the live page can render the same detail a developer would
-want when watching the demo. Row data never reaches stdout, never reaches
-disk, and lives only as long as the gateway process. In production you
-would drop the in-memory buffer or replace it with a sink that redacts
-values per your policy.
+The split is intentional. Stdout and the JSONL file have the same PII-free view: decision, redacted query, rejection code, SQLSTATE, timings, counts. The in-memory buffer keeps the full payload (rows and columns included) so the live page can show the same level of detail you would want when watching the demo run. Row data never appears in stdout, is never written to disk, and only exists for as long as the gateway process is running. In production you would either remove the in-memory buffer or replace it with a sink that redacts values according to your policy.
 
 ### How the SSE stream works
 
 - The page opens `GET /observability/events`.
-- On connect, the controller replays the current ring-buffer snapshot, then
-  streams new entries as they arrive.
-- Each subscriber has its own bounded `asyncio.Queue` (cap 1000). A slow
-  consumer drops entries for itself and logs a throttled warning; other
-  subscribers are unaffected.
-- Disconnects are detected via `request.is_disconnected()` and the
-  subscriber is removed.
-- Heartbeats (`: keepalive`) are sent every 15 seconds so proxies don't
-  close idle connections.
-- The client also caps its DOM at 500 cards and dedupes by `request_id`
-  across reconnects.
+- On connect, the controller replays the current ring-buffer snapshot, then streams new entries as they arrive.
+- Each subscriber has its own bounded `asyncio.Queue` (cap 1000). A slow subscriber drops entries from its own queue and a throttled warning is logged. Other subscribers are not affected.
+- Disconnects are detected via `request.is_disconnected()` and the subscriber is removed.
+- A `: keepalive` heartbeat is sent every 15 seconds so proxies do not close idle connections.
+- The client caps its DOM at 500 cards and dedupes by `request_id` across reconnects.
 
 ---
 
 ## Demo scenarios
 
-[`demo.sh`](demo.sh) walks through ten scenarios. The **Blocked by**
-column is the decision enforcement point.
+[`demo.sh`](demo.sh) runs ten scenarios. The **Blocked by** column is where the decision is actually enforced.
 
 |   # | Scenario                   | SQL                                                | Blocked by                             |
 | --: | :------------------------- | :------------------------------------------------- | :------------------------------------- |
@@ -247,9 +200,7 @@ column is the decision enforcement point.
 |  10 | Write with a secret        | `INSERT INTO users (... password_hash) VALUES ...` | Allowed, secret marked `[REDACTED]`    |
 
 > [!TIP]
-> Rows 7 and 8 are the interesting ones. A parser cannot reliably tell
-> which columns are sensitive: naming varies, schemas change, new columns
-> arrive. The database is the right place for that decision to live.
+> Rows 7 and 8 are the most interesting ones. A parser cannot reliably tell which columns are sensitive. Naming varies between projects, schemas change over time, and new columns get added. The database is the right place for that decision.
 
 ---
 
@@ -259,8 +210,8 @@ column is the decision enforcement point.
    Agent ──▶ FastAPI Router                       POST /query { query_text }
                 │
                 ├─▶ QueryScrubber.scrub(sql)      runs FIRST so even rejected
-                │◀─ redacted_sql                  queries land in the log with
-                │                                 literals scrubbed
+                │◀─ redacted_sql                  queries appear in the log
+                │                                 with literals scrubbed
                 ├─▶ QueryValidator.validate(sql)
                 │◀─ ValidationResultDto
                 │
@@ -298,8 +249,7 @@ column is the decision enforcement point.
 
 ## Validation rules
 
-Each rule is a single class with one method: `check(statement) -> ValidationResultDto`.
-`QueryValidator` parses once and fans the AST out to every rule.
+Each rule is a class with one method: `check(statement) -> ValidationResultDto`. `QueryValidator` parses the SQL once and passes the AST to every rule.
 
 |  # | Rule                         | Rejection code       | Rejects                                                           |
 | -: | :--------------------------- | :------------------- | :---------------------------------------------------------------- |
@@ -310,27 +260,19 @@ Each rule is a single class with one method: `check(statement) -> ValidationResu
 |  5 | `NoDangerousFunctionsRule`   | `dangerous_function` | `pg_read_file`, `dblink_exec`, `lo_export`, etc.                  |
 |  6 | `BoundedWriteRule`           | `unbounded_write`    | `UPDATE` / `DELETE` without a `WHERE`                             |
 
-Three pre-rule checks inside the validator cover the rest: `empty_query`,
-`parse_error`, `multi_statement`.
+Three pre-rule checks are inside the validator itself: `empty_query`, `parse_error`, `multi_statement`.
 
-Adding a rule is one decorated class. Drop a file under
-`src/infrastructure/persistence/postgres/rules/`, decorate it with
-`@sql_rule(dialects=["postgres"])`, and the validator picks it up at
-startup. The registry lives in
-[`src/infrastructure/persistence/sql/rule_registry.py`](src/infrastructure/persistence/sql/rule_registry.py).
+To add a new rule, add a decorated class under `src/infrastructure/persistence/postgres/rules/`, decorate it with `@sql_rule(dialects=["postgres"])`, and the validator finds it at startup. The registry is in [`src/infrastructure/persistence/sql/rule_registry.py`](src/infrastructure/persistence/sql/rule_registry.py).
 
 ---
 
 ## Configuration
 
-[`.env.example`](.env.example) is the template. Settings are loaded by
-`GatewaySettings` in
-[`src/infrastructure/config/settings.py`](src/infrastructure/config/settings.py);
-the gateway refuses to boot if required variables are missing.
+[`.env.example`](.env.example) is the template. Settings are loaded by `GatewaySettings` in [`src/infrastructure/config/settings.py`](src/infrastructure/config/settings.py). The gateway will not start if a required variable is missing.
 
 | Variable                           | Required | Default | Description                                                                                                               |
 | :--------------------------------- | :------: | :------ | :------------------------------------------------------------------------------------------------------------------------ |
-| `DATABASE_ADAPTER`                 |   yes    | n/a     | Name of the adapter package under `src/infrastructure/persistence/`. Ships with `postgres`.                               |
+| `DATABASE_ADAPTER`                 |   yes    | n/a     | Name of the adapter package under `src/infrastructure/persistence/`. Comes with `postgres`.                               |
 | `DATABASE_URL`                     |   yes    | n/a     | Connection string understood by the selected adapter.                                                                     |
 | `QUERY_TIMEOUT_MS`                 |    no    | `5000`  | Upper bound on how long one query may run.                                                                                |
 | `MAX_RESULTS`                      |    no    | `1000`  | Upper bound on records returned by one read.                                                                              |
@@ -394,8 +336,8 @@ sql_gateway_poc/
 │     ├─ observability/
 │     │  ├─ stdout_observability_recorder_adapter.py       PII-free JSON line per entry.
 │     │  ├─ jsonl_file_observability_recorder_adapter.py   PII-free append-only file.
-│     │  ├─ in_memory_observability_recorder_adapter.py    Ring buffer + SSE fan-out.
-│     │  └─ multi_sink_observability_recorder_adapter.py   Fans out to all three sinks.
+│     │  ├─ in_memory_observability_recorder_adapter.py    Ring buffer + SSE broadcast.
+│     │  └─ multi_sink_observability_recorder_adapter.py   Sends each entry to all sinks.
 │     └─ persistence/
 │        ├─ sql/                                    Shared across SQL-family adapters.
 │        │  ├─ query_validator.py                   Base class for dialect validators.
@@ -430,8 +372,7 @@ sql_gateway_poc/
 
 ### One controller per audience
 
-The REST surface has three distinct audiences. Each has its own controller
-class, its own `APIRouter`, and its own sub-package.
+The REST surface has three audiences. Each one has its own controller class, its own `APIRouter`, and its own sub-package.
 
 | Controller                         | Endpoints                                         | Audience                                   |
 | :--------------------------------- | :------------------------------------------------ | :----------------------------------------- |
@@ -439,21 +380,13 @@ class, its own `APIRouter`, and its own sub-package.
 | `probes_http_controller.py`        | `GET /health`, `GET /readiness`                   | Orchestrators (Kubernetes, load balancers) |
 | `observability_http_controller.py` | `GET /observability`, `GET /observability/events` | Humans watching the live page              |
 
-`main.py` walks `application/controllers/` at startup, discovers every
-`@injectable` class with a `router` attribute, and mounts each one. Adding
-a controller is dropping a new class in a new sub-package; `main.py`
-does not change.
+At startup, `main.py` walks `application/controllers/`, finds every `@injectable` class with a `router` attribute, and mounts it. To add a new controller, add a class into a new sub-package. `main.py` itself does not change.
 
 ---
 
 ## Adding a database adapter
 
-The plugin point is one environment variable. `DATABASE_ADAPTER=<name>`
-tells `main.py` to import `src/infrastructure/persistence/<name>/` and walk
-it for `@injectable` decorators. No registry file to edit, no switch
-statement to update. Each adapter package is self-contained and provides
-one concrete class per outbound port: `QueryExecutor`, `QueryValidator`,
-`QueryScrubber`.
+The plugin point is one environment variable. `DATABASE_ADAPTER=<name>` tells `main.py` to import `src/infrastructure/persistence/<name>/` and walk it for `@injectable` decorators. There is no central registry to update and no switch statement to extend. Each adapter package is self-contained and provides one concrete class per outbound port: `QueryExecutor`, `QueryValidator`, `QueryScrubber`.
 
 ### MySQL (SQL-family, reuses base classes)
 
@@ -472,9 +405,7 @@ one concrete class per outbound port: `QueryExecutor`, `QueryValidator`,
    - `query_scrubber_adapter.py`: walks the JSON doc and masks values on sensitive keys.
 2. Set `DATABASE_ADAPTER=mongo DATABASE_URL=mongodb://...` at boot.
 
-No shared plumbing is pulled in for Mongo; the walker only touches
-`mongo/`. The same shape works for DynamoDB, Redis, RavenDB, or anything
-else: self-contained folder, three classes, done.
+No SQL code gets imported for Mongo. The walker only looks inside `mongo/`. The same approach works for DynamoDB, Redis, RavenDB, or anything else: a self-contained folder with three classes.
 
 ---
 
@@ -486,11 +417,7 @@ make test-integration    # integration tests, need Docker
 make gate                # lint + mypy + unit tests in one shot
 ```
 
-114 unit tests run against fake collaborators. 16 integration tests exercise
-the real `init.sql` against a fresh Postgres 16 container via
-`testcontainers` and prove Layer 2 empirically. Integration tests are
-marked `@pytest.mark.integration` and skipped by default; they also skip
-gracefully if the Docker daemon is not reachable.
+114 unit tests run against fake collaborators. 16 integration tests run the real `init.sql` against a fresh Postgres 16 container via `testcontainers` and verify Layer 2 in practice. Integration tests are marked `@pytest.mark.integration` and skipped by default. They also skip gracefully if the Docker daemon is not reachable.
 
 <details>
 <summary><b>What the 114 unit tests cover</b></summary>
@@ -511,17 +438,14 @@ gracefully if the Docker daemon is not reachable.
 | Observability controller          |       2 | `tests/application/controllers/http/observability/test_controller.py`                      |
 | **Total**                         | **114** |                                                                                            |
 
-Every test runs against fake collaborators. No database required to
-exercise the full HTTP request path.
+Every test runs against fake collaborators. No database is required to test the full HTTP request path.
 
 </details>
 
 <details>
 <summary><b>What the 16 integration tests cover (real Postgres via testcontainers)</b></summary>
 
-These prove Layer 2 empirically: they run `init.sql` against a fresh
-Postgres 16 container and then connect as `agent_rw` to verify the
-permissions do what the schema claims.
+These tests verify Layer 2 in practice. They run `init.sql` against a fresh Postgres 16 container and then connect as `agent_rw` to check that the permissions actually do what the schema claims.
 
 | Area                     |  Count | What is verified                                                 |
 | :----------------------- | -----: | :--------------------------------------------------------------- |
@@ -538,31 +462,22 @@ permissions do what the schema claims.
 
 ## Out of scope
 
-This is a proof of concept. For production, add:
+This is a proof of concept. To run something like it in production, you would want to add:
 
-- [ ] **Gateway authentication.** Anything reaching `/query` can run allowlisted SQL; a real deployment needs per-agent credentials.
-- [ ] **Connection pooling.** PgBouncer between gateway and Postgres.
-- [ ] **Structured observability backend.** Stdout and a JSONL file are fine for a demo. The `ObservabilityRecorder` protocol makes swapping in OpenTelemetry, an SIEM, or a log aggregator a one-class change.
+- [ ] **Gateway authentication.** Right now any caller of `/query` can run allowlisted SQL. A real deployment needs per-agent credentials.
+- [ ] **Connection pooling.** PgBouncer between the gateway and Postgres.
+- [ ] **A real observability backend.** Stdout and a JSONL file are fine for a demo. The `ObservabilityRecorder` protocol is small enough that replacing it with OpenTelemetry, an SIEM, or a log aggregator is one new class.
 - [ ] **Rate limiting and per-agent quotas.**
-- [ ] **Multi-step transactions.** This PoC is transaction-per-request only. A session-token mode (client calls `BEGIN` / `COMMIT` explicitly) is the next step if the agent needs to read intermediate results before deciding what to write.
-- [ ] **Read-replica routing.** `SELECT`s to a replica, writes to the primary. The parser already knows which is which.
+- [ ] **Multi-step transactions.** This PoC is transaction-per-request only. A session-token mode (the agent calls `BEGIN` / `COMMIT` itself) is the obvious next step if it needs to read intermediate results before deciding what to write.
+- [ ] **Read-replica routing.** Reads to a replica, writes to the primary. The parser already knows which is which.
 
 ### Why not a wire-protocol proxy?
 
-For a production version, a wire-protocol proxy in the shape of pgcat is a
-better base. You get transparent transactions, prepared statements, real
-tooling support (psql, pgAdmin, any ORM), connection pooling, row
-streaming, and type fidelity without any JSON transcoding in the middle.
+For a real production version, a wire-protocol proxy like pgcat is a better starting point. You get transparent transactions, prepared statements, real tool support (psql, pgAdmin, ORMs), connection pooling, row streaming, and full type fidelity, without any JSON transcoding in the middle.
 
-This repo goes REST on purpose. The point it wants to make is that rules
-belong in the system instead of the prompt, and that is easier to show
-with curl, docker-compose, and a live HTML page than with a proxy a
-reader has to install and point libpq at.
+This repo uses REST on purpose. The point is that the rules belong in the system rather than in the prompt, and that is much easier to demonstrate with curl, docker-compose, and a live HTML page than with a proxy that the reader first has to install and connect libpq to.
 
-The design does not depend on the surface. The real parts are the
-validation rule registry and the database role. Put a pgcat-shaped proxy
-in front of the same rules and the same role, and the enforcement still
-holds. Same idea, different entry point.
+The validation rule registry and the database role are the parts that actually matter. Put a pgcat-style proxy in front of the same rules and the same role, and the enforcement still works. Different surface, same idea.
 
 ---
 
@@ -572,5 +487,5 @@ Released under the [MIT License](LICENSE). Copyright &copy; 2026 Philipp Höllin
 
 <div align="center">
 <br/>
-<sub>Built as a companion to a post on the <b>Decision Enforcement Principle</b>. <br/> If you enjoyed the design, the principle is worth more than the code.</sub>
+<sub>Built as a companion to a post on the <b>Decision Enforcement Principle</b>. <br/> If you liked the design, the principle is worth more than the code.</sub>
 </div>
