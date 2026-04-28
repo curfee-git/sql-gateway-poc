@@ -53,7 +53,6 @@ class TestBuffer:
         recorder.record(_make_entry("b"))
         snapshot = recorder.snapshot()
         assert [entry.request_id for entry in snapshot] == ["a", "b"]
-        # Mutating the returned list must not affect the buffer.
         snapshot.clear()
         assert [entry.request_id for entry in recorder.snapshot()] == ["a", "b"]
 
@@ -74,7 +73,6 @@ class TestSubscribe:
         async with recorder.subscribe() as subscriber_queue:
             assert recorder.subscriber_count() == 1
             recorder.record(_make_entry("x"))
-            # Give the event loop a tick to process call_soon_threadsafe.
             entry = await asyncio.wait_for(subscriber_queue.get(), timeout=1.0)
             assert entry.request_id == "x"
         assert recorder.subscriber_count() == 0

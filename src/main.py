@@ -45,9 +45,6 @@ from core.ports.outbound.query_scrubber import QueryScrubber
 from core.ports.outbound.query_validator import QueryValidator
 from infrastructure.config.settings import GatewaySettings
 
-# Emit application-level INFO/WARNING/ERROR to stdout so operator signals
-# from adapters (JSONL sink state, slow-consumer warnings, multi-sink
-# failures) surface alongside uvicorn's own log lines.
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",

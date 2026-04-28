@@ -123,8 +123,6 @@ class TestBoundedWritesWork:
     def test_insert_and_update_users_roundtrip(
         self, agent_connection: psycopg.Connection
     ) -> None:
-        # Users can be created and edited by the agent but not deleted:
-        # column-level INSERT/UPDATE are granted, DELETE is not.
         with agent_connection.cursor() as cursor:
             cursor.execute(
                 "INSERT INTO users (email, name, password_hash) "
@@ -148,7 +146,6 @@ class TestBoundedWritesWork:
     def test_insert_update_delete_roundtrip_on_orders(
         self, agent_connection: psycopg.Connection
     ) -> None:
-        # Orders is a table with full DML granted, so the whole roundtrip works.
         with agent_connection.cursor() as cursor:
             cursor.execute(
                 "INSERT INTO orders (user_id, status, amount) "

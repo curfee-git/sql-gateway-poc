@@ -52,11 +52,6 @@ class ExecuteQueryUseCase:
     ) -> None:
         self._access_guard = access_guard
         self._observability_recorder = observability_recorder
-        # The observability entry is kept in an in-memory ring buffer so the
-        # live /observability page can render a representative sample of each
-        # result. Capping the row payload here keeps memory bounded even if
-        # max_results is large. The full result still goes to the HTTP
-        # response.
         self._max_sample_rows_in_observability = (
             settings.max_sample_rows_in_observability
         )

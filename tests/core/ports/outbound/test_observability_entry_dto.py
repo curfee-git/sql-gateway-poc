@@ -72,7 +72,6 @@ class TestObservabilityEntry:
         payload = entry.to_json_payload(include_result_data=False)
         assert "rows" not in payload
         assert "columns" not in payload
-        # Counts and flags are not PII and must still be there.
         assert payload["rows_returned"] == 2
         assert payload["rows_were_truncated"] is False
 

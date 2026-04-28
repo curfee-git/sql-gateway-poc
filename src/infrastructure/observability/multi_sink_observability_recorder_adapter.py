@@ -59,7 +59,7 @@ class MultiSinkObservabilityRecorderAdapter:
         for recorder in self._recorders:
             try:
                 recorder.record(entry)
-            except Exception:  # noqa: BLE001 - sink isolation on purpose
+            except Exception:  # noqa: BLE001
                 _logger.exception(
                     "observability recorder %s failed",
                     type(recorder).__name__,

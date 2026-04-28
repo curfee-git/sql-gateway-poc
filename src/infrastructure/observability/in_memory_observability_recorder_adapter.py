@@ -70,7 +70,6 @@ class _Subscriber:
     def deliver(self, entry: ObservabilityEntryDto) -> None:
         if self.loop.is_closed():
             return
-        # Loop may close between the is_closed() check and the call.
         with contextlib.suppress(RuntimeError):
             self.loop.call_soon_threadsafe(self._put_if_possible, entry)
 
@@ -78,7 +77,6 @@ class _Subscriber:
         try:
             self.queue.put_nowait(entry)
         except asyncio.QueueFull:
-            # Slow consumer: drop this entry rather than grow unbounded.
             self._drops_since_last_warning += 1
             self._maybe_warn_about_slow_consumer()
 

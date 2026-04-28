@@ -166,7 +166,6 @@ class TestAllowed:
         )
         use_case.execute("SELECT id FROM t", request_id="req-6")
         entry = observability_recorder.entries[0]
-        # Full result size is reported for UX; sampled rows are capped.
         assert entry.rows_returned == 50
         assert entry.rows is not None
         assert len(entry.rows) == 20

@@ -80,7 +80,6 @@ def postgres_admin_url() -> Iterator[str]:
 @pytest.fixture(scope="session")
 def agent_rw_url(postgres_admin_url: str) -> str:
     """The connection URL for the restricted agent role."""
-    # Swap creds in the URL: admin -> agent_rw / agent_pw.
     without_scheme = postgres_admin_url.split("://", 1)[1]
     _, host_and_rest = without_scheme.split("@", 1)
     return f"postgresql://agent_rw:agent_pw@{host_and_rest}"
